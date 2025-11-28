@@ -19,3 +19,40 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+      - neo4j
+      - redis
+  
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: light-rag-qdrant
+    ports:
+      - "6337:6333"
+      - "6338:6334"
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+    volumes:
+      - light-rag-qdrant:/qdrant/storage
+  
+  neo4j:
+    image: neo4j:latest
+    container_name: light-rag-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+    volumes:
+      - light-rag-neo4j:/data
+  
+  redis:
+    image: redis:latest
+    container_name: light-rag-redis
+    volumes:
+      - light-rag-redis:/data
+  
+volumes:
+  light-rag-qdrant:
+  light-rag-neo4j:
+  light-rag-redis:

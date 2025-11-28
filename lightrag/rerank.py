@@ -10,6 +10,7 @@ from tenacity import (
     retry_if_exception_type,
 )
 from .utils import logger
+from .llm.bedrock import bedrock_rerank as llm_bedrock_rerank
 
 from dotenv import load_dotenv
 
@@ -167,6 +168,23 @@ async def generic_rerank_api(
                 {"index": result["index"], "relevance_score": result["relevance_score"]}
                 for result in results
             ]
+
+
+async def bedrock_rerank(
+    query: str,
+    documents: List[str],
+    top_n: Optional[int] = None,
+    api_key: Optional[str] = None,
+    model: str = "cohere.rerank-v3-5:0",
+    base_url: Optional[str] = None,
+    extra_body: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    return await llm_bedrock_rerank(
+        query=query,
+        documents=documents,
+        top_n=top_n,
+        model=model
+    )
 
 
 async def cohere_rerank(

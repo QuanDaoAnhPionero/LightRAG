@@ -2,6 +2,7 @@ import copy
 import os
 import json
 import logging
+from typing import List, Optional, Dict, Any
 
 import pipmaster as pm  # Pipmaster for dynamic library install
 
@@ -481,3 +482,91 @@ async def bedrock_embed(
         except Exception as e:
             # Convert to appropriate exception type
             _handle_bedrock_exception(e, "Bedrock embedding")
+
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, max=60),
+)
+async def bedrock_rerank(
+    query: str,
+    documents: List[str],
+    top_n: Optional[int] = None,
+    model: str = "cohere.rerank-v3-5:0",
+    aws_access_key_id=None,
+    aws_secret_access_key=None,
+    aws_session_token=None,
+) -> List[Dict[str, Any]]:
+    access_key = os.environ.get("AWS_ACCESS_KEY_ID") or aws_access_key_id
+    secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY") or aws_secret_access_key
+    session_token = os.environ.get("AWS_SESSION_TOKEN") or aws_session_token
+    _set_env_if_present("AWS_ACCESS_KEY_ID", access_key)
+    _set_env_if_present("AWS_SECRET_ACCESS_KEY", secret_key)
+    _set_env_if_present("AWS_SESSION_TOKEN", session_token)
+
+    # Region handling: prefer env
+    region = os.environ.get("AWS_REGION")
+
+    
+
+    session = aioboto3.Session()
+    async with session.client(
+        "bedrock-agent-runtime", region_name=region
+    ) as bedrock_async_client:
+        top_n = min(top_n, len(documents))
+
+        # Create query
+        queries = [
+            {
+                "textQuery": {
+                    "text": query,
+                },
+                "type": "TEXT",
+            }
+        ]
+
+        # Create reranking configurations
+        reranking_configurations = {
+            "bedrockRerankingConfiguration": {
+                "modelConfiguration": {
+                    "modelArn": f"arn:aws:bedrock:{region}::foundation-model/{model}",
+                    "additionalModelRequestFields": {
+                        "max_tokens_per_doc": 1000,
+                    },
+                },
+                "numberOfResults": top_n,
+            },
+            "type": "BEDROCK_RERANKING_MODEL",
+        }
+
+        # Create documents for reranking
+        sources = [
+            {
+                "inlineDocumentSource": {
+                    "jsonDocument": {
+                        "text": document,
+                    },
+                    "type": "JSON",
+                },
+                "type": "INLINE",
+            }
+            for document in documents
+        ]
+
+        # Create reranking request
+        rerank_params = {
+            "queries": queries,
+            "rerankingConfiguration": reranking_configurations,
+            "sources": sources,
+        }
+        
+        # Invoke reranking model
+        response = await bedrock_async_client.rerank(**rerank_params)
+
+        results = response["results"]
+
+        # Extract the indices of the matching documents
+        return [
+            {"index": result["index"], "relevance_score": result["relevanceScore"]}
+            for result in results
+        ]
